@@ -1,1 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Straight Walls - Light Mode</title>
+    <style>
+        body { 
+            margin: 0; background: #f0f2f5; color: #333; 
+            font-family: sans-serif; overflow: hidden;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        h1 { margin: 10px; font-size: 1.2rem; }
+        #game-container { 
+            position: relative; width: 95vw; height: 45vh; 
+            max-width: 600px; border: 3px solid #fff;
+            border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+        .controls { display: grid; grid-template-columns: repeat(3, 70px); grid-gap: 10px; margin-top: 15px; }
+        .btn { 
+            width: 70px; height: 70px; background: white; border: 1px solid #ccc;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; user-select: none; touch-action: manipulation;
+        }
+        .btn:active { background: #e0e0e0; }
+        .up { grid-column: 2; } .left { grid-column: 1; } .down { grid-column: 2; } .right { grid-column: 3; }
+    </style>
+</head>
+<body>
 
+    <h1>Find the Random Green Wall</h1>
+    <div id="game-container">
+        <canvas id="view"></canvas>
+    </div>
+
+    <div class="controls">
+        <div class="btn up" id="btn-up">▲</div>
+        <div class="btn left" id="btn-left">◀</div>
+        <div class="btn down" id="btn-down">▼</div>
+        <div class="btn right" id="btn-right">▶</div>
+    </div>
+
+<script>
+const canvas = document.getElementById('view');
+const ctx = canvas.getContext('2d');
+canvas.width = 300; 
+canvas.height = 200;
+
+// 1 = Wall, 0 = Path, 3 = Goal
+const map = [
+    [1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,0,1,1,1,0,1],
+    [1,0,1,0,0,0,0,1,0,1],
+    [1,0,1,0,1,1,0,1,0,1],
+    [1,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1]
+];
+
+// Randomize Exit Position
+function randomizeExit() {
+    // Clear old exit
+    for(let y=0; y<map.length; y++) 
+        for(let x=0; x<map[y].length; x++) 
+            if(map[y][x] === 3) map[y][x] = 0;
+
+    let placed = false;
+    while(!placed) {
+        let rx = Math.floor(Math.random() * 10);
+        let ry = Math.floor(Math.random() * 7);
+        // Only place on empty paths, not near spawn (1,1)
+        if(map[ry][rx] === 0 && (rx > 3 || ry > 3)) {
+            map[ry][rx] = 3;
+            placed = true;
+        }
+    }
+}
+randomizeExit();
+
+let p = { x: 1.5, y: 1.5, dir: 0 };
+const keys = {};
+
+window.onkeydown = e => keys[e.key] = true;
+window.onkeyup = e => keys[e.key] = false;
+
+function bindBtn(id, key) {
+    const btn = document.getElementById(id);
+    btn.onmousedown = btn.ontouchstart = (e) => { e.preventDefault(); keys[key] = true; };
+    btn.onmouseup = btn.ontouchend = () => keys[key] = false;
+}
+bindBtn('btn-up', 'ArrowUp'); bindBtn('btn-down', 'ArrowDown');
+bindBtn('btn-left', 'ArrowLeft'); bindBtn('btn-right', 'ArrowRight');
+
+function update() {
+    if (keys['ArrowLeft']) p.dir -= 0.05;
+    if (keys['ArrowRight']) p.dir += 0.05;
+    
+    let moveStep = 0;
+    if (keys['ArrowUp']) moveStep = 0.06;
+    if (keys['ArrowDown']) moveStep = -0.06;
+
+    let newX = p.x + Math.cos(p.dir) * moveStep;
+    let newY = p.y + Math.sin(p.dir) * moveStep;
+
+    if (map[Math.floor(newY)][Math.floor(newX)] === 0) {
+        p.x = newX; p.y = newY;
+    } else if (map[Math.floor(newY)][Math.floor(newX)] === 3) {
+        alert("You found it! Placing a new exit...");
+        randomizeExit();
+        p.x = 1.5; p.y = 1.5; p.dir = 0;
+    }
+}
+
+function draw() {
+    // Light Background
+    ctx.fillStyle = "#e3f2fd"; ctx.fillRect(0,0,300,100); // Sky
+    ctx.fillStyle = "#fafafa"; ctx.fillRect(0,100,300,100); // Floor
+
+    for (let i = 0; i < 300; i++) {
+        // Field of view is 60 degrees (approx 1 radian)
+        let rayAngle = (p.dir - 0.5) + (i / 300);
+        let distance = 0;
+        let hitWall = false;
+        let wallType = 0;
+
+        let eyeX = Math.cos(rayAngle);
+        let eyeY = Math.sin(rayAngle);
+
+        while (!hitWall && distance < 12) {
+            distance += 0.02;
+            let testX = Math.floor(p.x + eyeX * distance);
+            let testY = Math.floor(p.y + eyeY * distance);
+
+            if (testX < 0 || testX >= 10 || testY < 0 || testY >= 7) {
+                hitWall = true; distance = 12;
+            } else if (map[testY][testX] > 0) {
+                hitWall = true;
+                wallType = map[testY][testX];
+            }
+        }
+
+        // FIX FISH-EYE: Correct distance by cosine of relative angle
+        let correctedDist = distance * Math.cos(rayAngle - p.dir);
+
+        let ceiling = 100 - (100 / correctedDist);
+        let floor = 200 - ceiling;
+        
+        if (wallType === 3) {
+            ctx.strokeStyle = "#4caf50"; // Bright Green
+        } else {
+            let shade = Math.min(220, 50 + (correctedDist * 15));
+            ctx.strokeStyle = `rgb(${shade}, ${shade}, ${shade + 15})`;
+        }
+        
+        ctx.beginPath();
+        ctx.moveTo(i, ceiling);
+        ctx.lineTo(i, floor);
+        ctx.stroke();
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
